@@ -2,25 +2,33 @@ package usingscenery;
 
 import static org.jocl.CL.*;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.Buffer;
 import java.nio.FloatBuffer;
-import java.util.stream.Collectors;
 
-import org.jocl.*;
+import org.jocl.cl_command_queue;
+import org.jocl.cl_event;
 
 import com.jogamp.common.nio.Buffers;
-import com.jogamp.nativewindow.NativeSurface;
-import com.jogamp.opengl.*;
+import com.jogamp.opengl.GL;
+import com.jogamp.opengl.GLAutoDrawable;
+import com.jogamp.opengl.GLException;
 
-import cleargl.*;
-import jogamp.opengl.GLContextImpl;
-import jogamp.opengl.GLDrawableImpl;
-import jogamp.opengl.egl.EGLContext;
-import jogamp.opengl.macosx.cgl.CGL;
-import jogamp.opengl.macosx.cgl.MacOSXCGLContext;
-import jogamp.opengl.windows.wgl.WindowsWGLContext;
-import jogamp.opengl.x11.glx.X11GLXContext;
+import cl.CLKernel;
+import cl.CLProgram;
+import cl.CLSharedContext;
+import cl.CLSharedTexture;
+import cleargl.ClearGLDefaultEventListener;
+import cleargl.ClearGLDisplayable;
+import cleargl.ClearGLWindow;
+import cleargl.GLAttribute;
+import cleargl.GLProgram;
+import cleargl.GLTexture;
+import cleargl.GLTypeEnum;
+import cleargl.GLUniform;
+import cleargl.GLVertexArray;
+import cleargl.GLVertexAttributeArray;
 
 public class TexturedQuad
 {
@@ -73,145 +81,22 @@ public class TexturedQuad
 
 		private ClearGLDisplayable mClearGLWindow;
 
-		/**
-		 * Initializes the given context properties so that they may be used
-		 * to create an OpenCL context for the given GL object.
-		 *
-		 * @param contextProperties
-		 *            The context properties
-		 * @param gl
-		 *            The GL object
-		 */
-		private void initContextProperties( final cl_context_properties contextProperties, final GL gl )
+		private void fillTextureFromCL( final GL gl ) throws IOException
 		{
-			// Adapted from http://jogamp.org/jocl/www/
+			final CLSharedContext context = new CLSharedContext( gl );
+			System.out.println( context );
 
-			final GLContext glContext = gl.getContext();
-			if ( !glContext.isCurrent() ) { throw new IllegalArgumentException(
-					"OpenGL context is not current. This method should be called " +
-							"from the OpenGL rendering thread, when the context is current." ); }
+			final CLSharedTexture texture = new CLSharedTexture( context, mTexture, CL_MEM_WRITE_ONLY );
 
-			final long glContextHandle = glContext.getHandle();
-			final GLContextImpl glContextImpl = ( GLContextImpl ) glContext;
-			final GLDrawableImpl glDrawableImpl = glContextImpl.getDrawableImpl();
-			final NativeSurface nativeSurface = glDrawableImpl.getNativeSurface();
-
-			if ( glContext instanceof X11GLXContext )
-			{
-				final long displayHandle = nativeSurface.getDisplayHandle();
-				contextProperties.addProperty( CL_GL_CONTEXT_KHR, glContextHandle );
-				contextProperties.addProperty( CL_GLX_DISPLAY_KHR, displayHandle );
-			}
-			else if ( glContext instanceof WindowsWGLContext )
-			{
-				final long surfaceHandle = nativeSurface.getSurfaceHandle();
-				contextProperties.addProperty( CL_GL_CONTEXT_KHR, glContextHandle );
-				contextProperties.addProperty( CL_WGL_HDC_KHR, surfaceHandle );
-			}
-			else if ( glContext instanceof MacOSXCGLContext )
-			{
-				final int CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE = 268435456;
-				final long ctx = CGL.CGLGetCurrentContext();
-				final long sg = CGL.CGLGetShareGroup( ctx );
-				contextProperties.addProperty( CL_CONTEXT_PROPERTY_USE_CGL_SHAREGROUP_APPLE, sg );
-			}
-			else if ( glContext instanceof EGLContext )
-			{
-				final long displayHandle = nativeSurface.getDisplayHandle();
-				contextProperties.addProperty( CL_GL_CONTEXT_KHR, glContextHandle );
-				contextProperties.addProperty( CL_EGL_DISPLAY_KHR, displayHandle );
-			}
-			else
-			{
-				throw new RuntimeException( "unsupported GLContext: " + glContext );
-			}
-		}
-
-		private cl_kernel loadKernel(
-				final cl_context context,
-				final File file,
-				final String name ) throws FileNotFoundException
-		{
-			// Create the program from the source code
-			final BufferedReader reader = new BufferedReader( new FileReader( file ) );
-			final String source = reader.lines().collect( Collectors.joining( "\n" ) );
-			final cl_program program = clCreateProgramWithSource( context, 1, new String[] { source }, null, null );
-
-			// Build the program
-			clBuildProgram( program, 0, null, null, null, null );
-
-			// Create the kernel
-			final cl_kernel kernel = clCreateKernel( program, name, null );
-
-			return kernel;
-	    }
-
-
-		private void initCL( final GL3 gl ) throws FileNotFoundException
-		{
-			// The platform, device type and device number
-			// that will be used
-			final int platformIndex = 0;
-			final long deviceType = CL_DEVICE_TYPE_GPU;
-			final int deviceIndex = 1;
-
-			// Enable exceptions and subsequently omit error checks in this
-			// sample
-			CL.setExceptionsEnabled( true );
-
-			// Obtain the number of platforms
-			final int numPlatformsArray[] = new int[ 1 ];
-			clGetPlatformIDs( 0, null, numPlatformsArray );
-			final int numPlatforms = numPlatformsArray[ 0 ];
-
-			// Obtain a platform ID
-			final cl_platform_id platforms[] = new cl_platform_id[ numPlatforms ];
-			clGetPlatformIDs( platforms.length, platforms, null );
-			final cl_platform_id platform = platforms[ platformIndex ];
-
-			// Initialize the context properties
-			final cl_context_properties contextProperties = new cl_context_properties();
-			contextProperties.addProperty( CL_CONTEXT_PLATFORM, platform );
-			initContextProperties( contextProperties, gl );
-
-			// Obtain the number of devices for the platform
-			final int numDevicesArray[] = new int[ 1 ];
-			clGetDeviceIDs( platform, deviceType, 0, null, numDevicesArray );
-			final int numDevices = numDevicesArray[ 0 ];
-
-			// Obtain a device ID
-			final cl_device_id devices[] = new cl_device_id[ numDevices ];
-			clGetDeviceIDs( platform, deviceType, numDevices, devices, null );
-			final cl_device_id device = devices[ deviceIndex ];
-
-			System.err.println( getString( device, CL_DEVICE_NAME ) + " running " + getString( device, CL_DEVICE_VERSION ) );
-
-			// Create a context for the selected device
-			final cl_context context = clCreateContext(
-					contextProperties, 1, new cl_device_id[] { device },
-					null, null, null );
-
-			// Create a command-queue for the selected device
-			final cl_command_queue commandQueue = clCreateCommandQueue( context, device, 0, null );
-//			final cl_command_queue commandQueue = clCreateCommandQueueWithProperties( context, device, null, null );
-
-			mTexture.bind();
-
-			final cl_mem sharedTexture = clCreateFromGLTexture(
+			final CLProgram program = new CLProgram(
 					context,
-					CL_MEM_WRITE_ONLY,
-					GL.GL_TEXTURE_2D,
-					0,
-					mTexture.getId(),
-					null );
+					new File( TexturedQuad.class.getResource( "filltexture.cl" ).getFile() ) );
 
+			final CLKernel kernel = program.getKernel( "filltexture" );
 
-			final cl_kernel kernel = loadKernel( context,
-					new File( TexturedQuad.class.getResource( "filltexture.cl" ).getFile() ),
-					"filltexture" );
+			kernel.setArg( 0, texture );
 
-			clSetKernelArg( kernel, 0, Sizeof.cl_mem, Pointer.to( sharedTexture ) );
-
+			final cl_command_queue queue = context.getCommandQueue();
 
 			final long[] global_work_offset = null;
 			final long[] global_work_size = new long[] { 1280, 1280 };
@@ -221,8 +106,8 @@ public class TexturedQuad
 			final cl_event event = null;
 
 			clEnqueueNDRangeKernel(
-					commandQueue,
-					kernel,
+					queue,
+					kernel.getKernel(),
 					2,
 					global_work_offset,
 					global_work_size,
@@ -231,41 +116,9 @@ public class TexturedQuad
 					event_wait_list,
 					event );
 
-			clFinish( commandQueue );
+			clFinish( queue );
 
 			System.out.println( kernel );
-
-
-			// Read the program source code and create the program
-//	        final String source = readFile("kernels/simpleGL.cl");
-//	        final cl_program program = clCreateProgramWithSource(context, 1,
-//	            new String[]{ source }, null, null);
-//	        clBuildProgram(program, 0, null, "-cl-mad-enable", null, null);
-//
-//	        // Create the kernel which computes the sine wave pattern
-//	        kernel = clCreateKernel(program, "sine_wave", null);
-//
-//	        // Set the constant kernel arguments
-//	        clSetKernelArg(kernel, 1, Sizeof.cl_uint,
-//	            Pointer.to(new int[]{ meshWidth }));
-//	        clSetKernelArg(kernel, 2, Sizeof.cl_uint,
-//	            Pointer.to(new int[]{ meshHeight }));
-		}
-
-		String getString( final cl_device_id device, final int paramName )
-		{
-			// Obtain the length of the string that will be queried
-			final long[] size = new long[ 1 ];
-			clGetDeviceInfo( device, paramName, 0, null, size );
-
-			// Create a buffer of the appropriate size and fill it with the
-			// info
-			final byte[] buffer = new byte[ ( int ) size[ 0 ] ];
-			clGetDeviceInfo( device, paramName, buffer.length, Pointer.to( buffer ), null );
-
-			// Create a string from the buffer (excluding the trailing \0
-			// byte)
-			return new String( buffer, 0, buffer.length - 1 );
 		}
 
 		@Override
@@ -316,10 +169,9 @@ public class TexturedQuad
 						1280, 1280, 1,
 						true,
 						1 );
-				mTexture.copyFrom( getTextureBuffer3() );
-				lGL.glFinish();
-
-				initCL( lGL.getGL3() );
+//				mTexture.copyFrom( getTextureBuffer3() );
+//				lGL.glFinish();
+				fillTextureFromCL( lGL );
 			}
 			catch ( GLException | IOException e )
 			{
@@ -401,8 +253,8 @@ public class TexturedQuad
 	{
 		lClearGLWindowEventListener.setDebugMode( false );
 
-		try ( ClearGLDisplayable lClearGLWindow = new ClearGLWindow(
-				"demo: ClearGLWindow", 512, 512, lClearGLWindowEventListener ) )
+		try (ClearGLDisplayable lClearGLWindow = new ClearGLWindow(
+				"demo: ClearGLWindow", 512, 512, lClearGLWindowEventListener ))
 		{
 			lClearGLWindow.setVisible( true );
 
