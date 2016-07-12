@@ -1,5 +1,6 @@
 package usingscenery;
 
+import static cl.CLUtils.query;
 import static org.jocl.CL.*;
 
 import java.io.File;
@@ -9,6 +10,7 @@ import java.nio.FloatBuffer;
 
 import org.jocl.cl_command_queue;
 import org.jocl.cl_event;
+import org.jocl.cl_image_format;
 
 import com.jogamp.common.nio.Buffers;
 import com.jogamp.opengl.GL;
@@ -97,6 +99,18 @@ public class TexturedQuad
 			kernel.setArg( 0, texture );
 
 			final cl_command_queue queue = context.getCommandQueue();
+
+
+			final cl_image_format formats[] = query( cl_image_format.class,
+					( l, a, n ) -> clGetSupportedImageFormats(
+					context.getContext(),
+					CL_MEM_READ_ONLY,
+					CL_MEM_OBJECT_IMAGE3D, l, a, n ) );
+
+			for ( final cl_image_format format : formats )
+			{
+				System.out.println( format );
+			}
 
 			final long[] global_work_offset = null;
 			final long[] global_work_size = new long[] { 1280, 1280 };
