@@ -29,7 +29,7 @@ public class LRUBlockCache< K, B >
 	@FunctionalInterface
 	public static interface BlockFactory< B >
 	{
-		B createBlock( int[] pos );
+		B createBlock( int[] gridPos );
 	}
 
 	private final BlockFactory< B > blockFactory;
