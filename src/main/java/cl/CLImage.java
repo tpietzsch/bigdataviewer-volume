@@ -4,11 +4,15 @@ import static org.jocl.CL.*;
 
 import org.jocl.CL;
 import org.jocl.Pointer;
+import org.jocl.cl_command_queue;
+import org.jocl.cl_event;
 import org.jocl.cl_image_desc;
 import org.jocl.cl_image_format;
 import org.jocl.cl_mem;
 
-public class CLImage
+import net.imglib2.EuclideanSpace;
+
+public class CLImage implements EuclideanSpace
 {
 	private final CLContext context;
 
@@ -17,6 +21,8 @@ public class CLImage
 	private final cl_image_desc image_desc;
 
 	private final cl_mem memobj;
+
+	private final int numDimensions;
 
 	private Pointer pointer;
 
@@ -49,22 +55,26 @@ public class CLImage
 		this.context = context;
 
 		image_format = new cl_image_format();
-		image_format.image_channel_order = CL_R;
-		image_format.image_channel_data_type = CL_FLOAT;
+		image_format.image_channel_order = image_channel_order;
+		image_format.image_channel_data_type = image_channel_data_type;
 
 		image_desc = new cl_image_desc();
-		if ( dims.length == 1 )
+		numDimensions = dims.length;
+		if ( numDimensions == 1 )
 		{
 			image_desc.image_type = CL_MEM_OBJECT_IMAGE1D;
 			image_desc.image_width = dims[ 0 ];
+			image_desc.image_height = 1;
+			image_desc.image_depth = 1;
 		}
-		else if ( dims.length == 2 )
+		else if ( numDimensions == 2 )
 		{
 			image_desc.image_type = CL_MEM_OBJECT_IMAGE2D;
 			image_desc.image_width = dims[ 0 ];
 			image_desc.image_height = dims[ 1 ];
+			image_desc.image_depth = 1;
 		}
-		else if ( dims.length == 3 )
+		else if ( numDimensions == 3 )
 		{
 			image_desc.image_type = CL_MEM_OBJECT_IMAGE3D; // CL_MEM_OBJECT_IMAGE2D
 			image_desc.image_width = dims[ 0 ];
@@ -92,5 +102,53 @@ public class CLImage
 	{
 		CL.clReleaseMemObject( memobj );
 		released = true;
+	}
+
+	public void enqueueWrite( final Pointer ptr )
+	{
+		final long[] origin = new long[] { 0, 0, 0 };
+		final long[] region = new long[] {
+				image_desc.image_width,
+				image_desc.image_height,
+				image_desc.image_depth };
+		enqueueWrite( ptr, origin, region );
+	}
+
+	public void enqueueWrite(
+			final Pointer ptr,
+			final long ... originAndRegion )
+	{
+		if ( originAndRegion.length != 2 * numDimensions )
+			throw new IllegalArgumentException();
+		final long[] origin = new long[] { 0, 0, 0 };
+		final long[] region = new long[] { 1, 1, 1 };
+		for ( int d = 0; d < numDimensions; ++d )
+		{
+			origin[ d ] = originAndRegion[ d ];
+			region[ d ] = originAndRegion[ d + numDimensions ];
+		}
+		enqueueWrite( ptr, origin, region );
+	}
+
+	public void enqueueWrite(
+			final Pointer ptr,
+			final long[] origin,
+			final long[] region )
+	{
+		final cl_command_queue queue = context.getCommandQueue();
+		final boolean blocking_write = true;
+		final long input_row_pitch = 0;
+		final long input_slice_pitch = 0;
+		final int num_events_in_wait_list = 0;
+		final cl_event[] event_wait_list = null;
+		final cl_event event = null;
+		clEnqueueWriteImage(
+				queue, memobj, blocking_write, origin, region, input_row_pitch, input_slice_pitch, ptr, num_events_in_wait_list, event_wait_list, event );
+	}
+
+	@Override
+	public int numDimensions()
+	{
+		return numDimensions;
 	}
 }
